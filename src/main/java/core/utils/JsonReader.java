@@ -1,8 +1,10 @@
 package core.utils;
 
 
+import core.annotations.JsonId;
 import core.configs.Configs;
 import core.exceptions.JsonFileNotFoundException;
+import core.exceptions.KeyFieldNotFoundException;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -12,10 +14,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
+import java.util.*;
 import java.util.logging.Logger;
 import java.util.stream.Stream;
 
@@ -23,8 +22,10 @@ public class JsonReader {
     private static final Map<String, Path> JSON_FILES = new HashMap<>();
     private static final Logger LOGGER = Logger.getLogger(JsonReader.class.getName());
 
-    static {
 
+    static {init();}
+
+    private static void init() {
         try (Stream<Path> paths = Files.walk(Paths.get(Configs.TEST_DATA_DIR))) {
             paths.forEach(f -> {
                 if (Files.isRegularFile(f)) {
@@ -66,22 +67,35 @@ public class JsonReader {
     }
 
 
-    public static <T> T getObject(Class<T> t, String id) {
-        Optional<T> optional;
-        try {
-            Field field = t.getDeclaredField("id");
-            optional = getObjectsList(t).stream().filter(data -> {
-                try {
-                    field.setAccessible(true);
-                    return field.get(data).equals(id);
-                } catch (IllegalAccessException e) {
-                    throw new RuntimeException(e);
-                }
-            }).findFirst();
-        } catch (NoSuchFieldException e) {
-            throw new RuntimeException(e);
+    private static <T> Field getKeyField(Class<T> tClass) {
+        Field field;
+        Field[] fields = tClass.getDeclaredFields();
+        Optional<Field> annotatedField = Arrays.stream(fields).filter(f -> f.isAnnotationPresent(JsonId.class)).findFirst();
+
+        if (annotatedField.isPresent()) {
+            return annotatedField.get();
         }
-        return optional.orElseThrow();
+        try {
+            field = tClass.getDeclaredField("id");
+        } catch (NoSuchFieldException e) {
+            throw new KeyFieldNotFoundException("Id field is not found");
+        }
+        return field;
+    }
+
+
+    public static <T> T getObject(Class<T> t, Object id) {
+        Optional<T> optional;
+        Field field = getKeyField(t);
+        optional = getObjectsList(t).stream().filter(data -> {
+            try {
+                field.setAccessible(true);
+                return field.get(data).equals(id);
+            } catch (IllegalAccessException e) {
+                throw new RuntimeException(e);
+            }
+        }).findFirst();
+        return optional.orElse(null);
     }
 
 
